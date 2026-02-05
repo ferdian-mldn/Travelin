@@ -17,6 +17,12 @@ interface BookingData {
   tour: Tour; // Data tour nempel di sini
 }
 
+declare global {
+  interface Window {
+    snap: any;
+  }
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [bookings, setBookings] = useState<BookingData[]>([]);
@@ -74,39 +80,79 @@ export default function Dashboard() {
     }
   };
 
+  // ... fungsi handlePayment yang lama ...
+
+  const handleDownloadInvoice = async (bookingId: number) => {
+    const token = Cookies.get("token");
+
+    try {
+      // 1. Request ke Backend
+      const res = await fetch(`http://127.0.0.1:8000/api/bookings/${bookingId}/invoice`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) throw new Error("Gagal mengunduh kwitansi");
+
+      // 2. Ubah response jadi "Blob" (File mentah)
+      const blob = await res.blob();
+
+      // 3. Bikin Link Download Palsu secara gaib
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Invoice-Travelin-${bookingId}.pdf`; // Nama file saat didownload
+      document.body.appendChild(a);
+      a.click(); // Otomatis klik
+      a.remove(); // Hapus linknya
+      window.URL.revokeObjectURL(url); // Bersihkan memori
+
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
+
   // ... state lain ...
   const [processingId, setProcessingId] = useState<number | null>(null); // Untuk loading per tombol
 
   // FUNGSI BAYAR
   const handlePayment = async (bookingId: number) => {
-    // Konfirmasi dulu
-    if (!confirm("Apakah Anda yakin ingin melakukan pembayaran sebesar tagihan ini?")) return;
-
-    setProcessingId(bookingId); // Nyalakan loading di tombol spesifik
+    setProcessingId(bookingId);
     const token = Cookies.get("token");
 
     try {
+      // 1. Minta Token Snap dari Backend Laravel
       const res = await fetch(`http://127.0.0.1:8000/api/bookings/${bookingId}/pay`, {
         method: "POST",
-        headers: { 
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json"
-        },
+        headers: { "Authorization": `Bearer ${token}` },
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
 
-      if (!res.ok) throw new Error(data.message || "Gagal memproses pembayaran");
-
-      alert("🎉 Pembayaran Berhasil! Tiket Anda sudah terbit.");
-      
-      // Refresh data tanpa reload halaman
-      fetchBookings(token!); 
+      // 2. Buka Pop-up Midtrans (Snap)
+      window.snap.pay(data.snap_token, {
+        onSuccess: function(result: any) {
+          alert("Pembayaran Berhasil!");
+          fetchBookings(token!); // Refresh data otomatis
+        },
+        onPending: function(result: any) {
+          alert("Menunggu pembayaran...");
+        },
+        onError: function(result: any) {
+          alert("Pembayaran gagal!");
+        },
+        onClose: function() {
+          alert("Anda menutup pop-up pembayaran sebelum menyelesaikan transaksi.");
+        }
+      });
 
     } catch (error: any) {
       alert(error.message);
     } finally {
-      setProcessingId(null); // Matikan loading
+      setProcessingId(null);
     }
   };
 
@@ -192,23 +238,52 @@ export default function Dashboard() {
                       <p className="text-xl font-bold text-white">{formatRupiah(item.total_price)}</p>
                     </div>
 
-                    {item.status === 'pending' && (
+                    {/* Tombol Bayar (Pending) */}
+{item.status === 'pending' && (
   <button 
-    onClick={() => handlePayment(item.id)} // <--- Pasang fungsi di sini
-    disabled={processingId === item.id} // Disable kalau lagi loading
+    onClick={() => handlePayment(item.id)}
+    disabled={processingId === item.id}
     className="flex items-center gap-2 rounded-full bg-orange-600 px-6 py-2 text-sm font-bold text-white shadow-lg shadow-orange-600/20 transition hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
   >
     {processingId === item.id ? (
       <>
-        <Loader2 className="animate-spin h-4 w-4" /> Memproses...
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Memproses...
       </>
     ) : (
       <>
-        <CreditCard className="h-4 w-4" /> Bayar Sekarang
+        <CreditCard className="h-4 w-4" />
+        Bayar Sekarang
       </>
     )}
   </button>
 )}
+
+{/* Tombol Download Kwitansi (Paid) */}
+{item.status === 'paid' && (
+  <button
+    onClick={() => handleDownloadInvoice(item.id)}
+    className="mt-2 flex items-center gap-2 rounded-xl bg-green-600 px-6 py-2 text-sm font-bold text-white transition hover:bg-green-700"
+  >
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" x2="12" y1="15" y2="3" />
+    </svg>
+    Download Kwitansi
+  </button>
+)}
+
                   </div>
 
                 </div>

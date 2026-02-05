@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\TourController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\WebhookController;
 
 // Route Wajib Laravel 11 (biar user terdeteksi)
 Route::get('/user', function (Request $request) {
@@ -42,4 +43,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/bookings', [BookingController::class, 'store']); // Create
     Route::get('/bookings', [BookingController::class, 'index']);  // <--- TAMBAHKAN INI (List)
     Route::post('/bookings/{id}/pay', [PaymentController::class, 'pay']); // <--- Rute Bayar
+    Route::get('/bookings/{id}/invoice', [App\Http\Controllers\Api\BookingController::class, 'downloadInvoice']);
 });
+
+Route::post('/midtrans-callback', [WebhookController::class, 'handler']);
