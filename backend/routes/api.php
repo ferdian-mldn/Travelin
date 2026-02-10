@@ -42,8 +42,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/bookings', [BookingController::class, 'store']);
     Route::post('/bookings', [BookingController::class, 'store']); // Create
     Route::get('/bookings', [BookingController::class, 'index']);  // <--- TAMBAHKAN INI (List)
+    Route::get('/bookings/{id}', [BookingController::class, 'show']);
     Route::post('/bookings/{id}/pay', [PaymentController::class, 'pay']); // <--- Rute Bayar
     Route::get('/bookings/{id}/invoice', [App\Http\Controllers\Api\BookingController::class, 'downloadInvoice']);
+    Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancel']);
 });
 
 Route::post('/midtrans-callback', [WebhookController::class, 'handler']);

@@ -1,22 +1,24 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
-import { Calendar, MapPin, Clock, CreditCard, Loader2, AlertCircle } from "lucide-react";
+import { Calendar, MapPin, Clock, CreditCard, Loader2, FileText } from "lucide-react";
 import { Tour } from "@/types";
 
-// Tipe data Booking (Gabungan Booking + Tour)
+// Tipe data Booking
 interface BookingData {
   id: number;
   travel_date: string;
   status: "pending" | "paid" | "cancelled";
   total_price: string;
   quantity: number;
-  tour: Tour; // Data tour nempel di sini
+  tour: Tour;
 }
 
+// Deklarasi Global untuk Midtrans Snap
 declare global {
   interface Window {
     snap: any;
@@ -28,7 +30,9 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState<BookingData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [processingId, setProcessingId] = useState<number | null>(null);
 
+  // 1. Load Data Saat Pertama Buka
   useEffect(() => {
     const token = Cookies.get("token");
     const userData = Cookies.get("user");
@@ -45,6 +49,7 @@ export default function Dashboard() {
     fetchBookings(token);
   }, []);
 
+  // 2. Fetch Data Booking dari API
   const fetchBookings = async (token: string) => {
     try {
       const res = await fetch("http://127.0.0.1:8000/api/bookings", {
@@ -61,7 +66,7 @@ export default function Dashboard() {
     }
   };
 
-  // Format Rupiah
+  // 3. Helper Format Rupiah
   const formatRupiah = (val: string) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
@@ -70,7 +75,7 @@ export default function Dashboard() {
     }).format(Number(val));
   };
 
-  // Warna Badge Status
+  // 4. Helper Warna Status
   const getStatusColor = (status: string) => {
     switch (status) {
       case "paid": return "bg-green-500/20 text-green-400 border-green-500/50";
@@ -80,50 +85,12 @@ export default function Dashboard() {
     }
   };
 
-  // ... fungsi handlePayment yang lama ...
-
-  const handleDownloadInvoice = async (bookingId: number) => {
-    const token = Cookies.get("token");
-
-    try {
-      // 1. Request ke Backend
-      const res = await fetch(`http://127.0.0.1:8000/api/bookings/${bookingId}/invoice`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) throw new Error("Gagal mengunduh kwitansi");
-
-      // 2. Ubah response jadi "Blob" (File mentah)
-      const blob = await res.blob();
-
-      // 3. Bikin Link Download Palsu secara gaib
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Invoice-Travelin-${bookingId}.pdf`; // Nama file saat didownload
-      document.body.appendChild(a);
-      a.click(); // Otomatis klik
-      a.remove(); // Hapus linknya
-      window.URL.revokeObjectURL(url); // Bersihkan memori
-
-    } catch (error: any) {
-      alert(error.message);
-    }
-  };
-
-  // ... state lain ...
-  const [processingId, setProcessingId] = useState<number | null>(null); // Untuk loading per tombol
-
-  // FUNGSI BAYAR
+  // 5. Fungsi Bayar (Midtrans)
   const handlePayment = async (bookingId: number) => {
     setProcessingId(bookingId);
     const token = Cookies.get("token");
 
     try {
-      // 1. Minta Token Snap dari Backend Laravel
       const res = await fetch(`http://127.0.0.1:8000/api/bookings/${bookingId}/pay`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` },
@@ -132,11 +99,10 @@ export default function Dashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
 
-      // 2. Buka Pop-up Midtrans (Snap)
       window.snap.pay(data.snap_token, {
         onSuccess: function(result: any) {
           alert("Pembayaran Berhasil!");
-          fetchBookings(token!); // Refresh data otomatis
+          fetchBookings(token!);
         },
         onPending: function(result: any) {
           alert("Menunggu pembayaran...");
@@ -145,7 +111,7 @@ export default function Dashboard() {
           alert("Pembayaran gagal!");
         },
         onClose: function() {
-          alert("Anda menutup pop-up pembayaran sebelum menyelesaikan transaksi.");
+          console.log("Customer closed the popup without finishing the payment");
         }
       });
 
@@ -153,6 +119,33 @@ export default function Dashboard() {
       alert(error.message);
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  // 6. Fungsi Download Invoice
+  const handleDownloadInvoice = async (bookingId: number) => {
+    const token = Cookies.get("token");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/bookings/${bookingId}/invoice`, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error("Gagal mengunduh kwitansi");
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Invoice-Travelin-${bookingId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+    } catch (error: any) {
+      alert(error.message);
     }
   };
 
@@ -168,7 +161,7 @@ export default function Dashboard() {
     <main className="min-h-screen bg-[#050505] pt-24 pb-12 px-6 md:px-20">
       <div className="mx-auto max-w-6xl">
         
-        {/* Header Dashboard */}
+        {/* Header */}
         <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="font-serif text-3xl text-white">Dashboard Saya</h1>
@@ -183,9 +176,7 @@ export default function Dashboard() {
         <div className="space-y-6">
           {bookings.length === 0 ? (
             <div className="rounded-3xl border border-white/10 bg-white/5 p-12 text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
-                <Calendar className="h-8 w-8 text-gray-400" />
-              </div>
+              <Calendar className="mx-auto mb-4 h-12 w-12 text-gray-500" />
               <h3 className="text-xl font-semibold text-white">Belum ada perjalanan</h3>
               <p className="mt-2 text-gray-400">Anda belum memesan paket wisata apapun.</p>
               <Link href="/tours" className="mt-6 inline-block rounded-full bg-orange-600 px-8 py-3 font-semibold text-white hover:bg-orange-700 transition">
@@ -194,100 +185,100 @@ export default function Dashboard() {
             </div>
           ) : (
             bookings.map((item) => (
-              <div key={item.id} className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md transition hover:bg-white/10">
-                <div className="flex flex-col gap-6 md:flex-row md:items-center">
-                  
-                  {/* Gambar Thumbnail (Kiri) */}
-                  <div className="relative h-48 w-full md:h-32 md:w-48 flex-shrink-0 overflow-hidden rounded-2xl">
-                    <Image
-                      src={item.tour.thumbnail}
-                      alt={item.tour.name}
-                      fill
-                      className="object-cover transition duration-700 group-hover:scale-110"
-                    />
-                  </div>
-
-                  {/* Info Detail (Tengah) */}
-                  <div className="flex-1">
-                    <div className="mb-2 flex items-center gap-2">
-                      <span className={`rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wider ${getStatusColor(item.status)}`}>
-                        {item.status}
-                      </span>
-                      <span className="text-xs text-gray-500">Order ID: #{item.id}</span>
-                    </div>
+              // BUNGKUS DENGAN LINK BIAR BISA DIKLIK KE DETAIL
+              <Link 
+                href={`/dashboard/bookings/${item.id}`} 
+                key={item.id}
+                className="block group"
+              >
+                <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md transition-all duration-300 hover:bg-white/10 hover:border-orange-500/30">
+                  <div className="flex flex-col gap-6 md:flex-row md:items-center">
                     
-                    <h3 className="font-serif text-xl font-bold text-white mb-2">{item.tour.name}</h3>
-                    
-                    <div className="flex flex-wrap gap-4 text-sm text-gray-400">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" /> {item.travel_date}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" /> {item.tour.duration_days} Hari
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <MapPin className="h-4 w-4" /> {item.tour.location}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Harga & Aksi (Kanan) */}
-                  <div className="flex flex-col items-start gap-3 md:items-end md:border-l md:border-white/10 md:pl-6">
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400">Total Tagihan ({item.quantity} Pax)</p>
-                      <p className="text-xl font-bold text-white">{formatRupiah(item.total_price)}</p>
+                    {/* Gambar Thumbnail */}
+                    <div className="relative h-48 w-full md:h-32 md:w-48 flex-shrink-0 overflow-hidden rounded-2xl">
+                      <Image
+                        src={item.tour.thumbnail}
+                        alt={item.tour.name}
+                        fill
+                        className="object-cover transition duration-700 group-hover:scale-110"
+                      />
                     </div>
 
-                    {/* Tombol Bayar (Pending) */}
-{item.status === 'pending' && (
-  <button 
-    onClick={() => handlePayment(item.id)}
-    disabled={processingId === item.id}
-    className="flex items-center gap-2 rounded-full bg-orange-600 px-6 py-2 text-sm font-bold text-white shadow-lg shadow-orange-600/20 transition hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
-  >
-    {processingId === item.id ? (
-      <>
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Memproses...
-      </>
-    ) : (
-      <>
-        <CreditCard className="h-4 w-4" />
-        Bayar Sekarang
-      </>
-    )}
-  </button>
-)}
+                    {/* Info Detail */}
+                    <div className="flex-1">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className={`rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wider ${getStatusColor(item.status)}`}>
+                          {item.status}
+                        </span>
+                        <span className="text-xs text-gray-500">Order ID: #{item.id}</span>
+                      </div>
+                      
+                      <h3 className="font-serif text-xl font-bold text-white mb-2 group-hover:text-orange-400 transition-colors">
+                        {item.tour.name}
+                      </h3>
+                      
+                      <div className="flex flex-wrap gap-4 text-sm text-gray-400">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-4 w-4" /> {item.travel_date}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" /> {item.tour.duration_days} Hari
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <MapPin className="h-4 w-4" /> {item.tour.location}
+                        </div>
+                      </div>
+                    </div>
 
-{/* Tombol Download Kwitansi (Paid) */}
-{item.status === 'paid' && (
-  <button
-    onClick={() => handleDownloadInvoice(item.id)}
-    className="mt-2 flex items-center gap-2 rounded-xl bg-green-600 px-6 py-2 text-sm font-bold text-white transition hover:bg-green-700"
-  >
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" x2="12" y1="15" y2="3" />
-    </svg>
-    Download Kwitansi
-  </button>
-)}
+                    {/* Harga & Tombol Aksi */}
+                    <div className="flex flex-col items-start gap-3 md:items-end md:border-l md:border-white/10 md:pl-6">
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400">Total Tagihan ({item.quantity} Pax)</p>
+                        <p className="text-xl font-bold text-white">{formatRupiah(item.total_price)}</p>
+                      </div>
+
+                      {/* Tombol Bayar (Pending) */}
+                      {item.status === 'pending' && (
+                        <button 
+                          onClick={(e) => {
+                            e.preventDefault(); // Mencegah masuk ke halaman detail saat klik tombol
+                            handlePayment(item.id);
+                          }}
+                          disabled={processingId === item.id}
+                          className="flex items-center gap-2 rounded-full bg-orange-600 px-6 py-2 text-sm font-bold text-white shadow-lg shadow-orange-600/20 transition hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed hover:scale-105"
+                        >
+                          {processingId === item.id ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Memproses...
+                            </>
+                          ) : (
+                            <>
+                              <CreditCard className="h-4 w-4" />
+                              Bayar Sekarang
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Tombol Download Invoice (Paid) */}
+                      {item.status === 'paid' && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault(); // Mencegah masuk ke halaman detail
+                            handleDownloadInvoice(item.id);
+                          }}
+                          className="flex items-center gap-2 rounded-xl bg-green-600/20 px-4 py-2 text-sm font-bold text-green-400 border border-green-500/50 transition hover:bg-green-600/30 hover:scale-105"
+                        >
+                          <FileText className="h-4 w-4" />
+                          Download Kwitansi
+                        </button>
+                      )}
+                    </div>
 
                   </div>
-
                 </div>
-              </div>
+              </Link>
             ))
           )}
         </div>

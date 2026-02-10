@@ -82,4 +82,42 @@ class BookingController extends Controller
             'data' => $bookings
         ]);
     }
+    public function show($id)
+    {
+        // Cari booking berdasarkan ID, sekalian ambil data tour-nya
+        $booking = \App\Models\Booking::with(['tour'])->find($id);
+
+        // Validasi kalau data tidak ketemu
+        if (!$booking) {
+            return response()->json([
+                'message' => 'Data booking tidak ditemukan'
+            ], 404);
+        }
+
+        // Return data JSON
+        return response()->json([
+            'data' => $booking
+        ]);
+    }
+
+    public function cancel($id)
+{
+    $booking = Booking::find($id);
+
+    if (!$booking) {
+        return response()->json(['message' => 'Data tidak ditemukan'], 404);
+    }
+
+    // Validasi: Hanya status 'pending' yang boleh dicancel
+    if ($booking->status !== 'pending') {
+        return response()->json(['message' => 'Hanya pesanan pending yang bisa dibatalkan!'], 400);
+    }
+
+    $booking->update(['status' => 'cancelled']);
+
+    return response()->json([
+        'message' => 'Pesanan berhasil dibatalkan',
+        'data' => $booking
+    ]);
+}
 }

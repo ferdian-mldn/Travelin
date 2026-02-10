@@ -1,8 +1,9 @@
 "use client";
+
 import { useState, useRef } from "react";
-import { Calendar, CreditCard, Loader2 } from "lucide-react"; // Tambah Loader2
+import { Calendar, CreditCard, Loader2 } from "lucide-react";
 import { Tour } from "@/types";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Cookies from "js-cookie";
 
 interface BookingFormProps {
@@ -11,9 +12,11 @@ interface BookingFormProps {
 
 export default function BookingForm({ tour }: BookingFormProps) {
   const router = useRouter();
+  const pathname = usePathname();
+
   const [quantity, setQuantity] = useState(1);
   const [date, setDate] = useState("");
-  const [isLoading, setIsLoading] = useState(false); // State Loading
+  const [isLoading, setIsLoading] = useState(false);
   
   const dateInputRef = useRef<HTMLInputElement>(null);
 
@@ -30,25 +33,23 @@ export default function BookingForm({ tour }: BookingFormProps) {
     }).format(val);
   };
 
-  // --- FUNGSI CREATE BOOKING ---
   const handleBooking = async () => {
-    // 1. Cek Login dulu
+    setIsLoading(true);
+
     const token = Cookies.get("token");
+
     if (!token) {
-      alert("Silakan login terlebih dahulu untuk melakukan pemesanan.");
-      router.push("/login");
+      const currentUrl = encodeURIComponent(pathname);
+      router.push(`/login?callbackUrl=${currentUrl}`);
       return;
     }
 
-    setIsLoading(true);
-
     try {
-      // 2. Kirim Data ke Laravel
       const res = await fetch("http://127.0.0.1:8000/api/bookings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`, // Kirim Token User
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           tour_id: tour.id,
@@ -61,12 +62,9 @@ export default function BookingForm({ tour }: BookingFormProps) {
 
       if (!res.ok) throw new Error(data.message || "Gagal booking");
 
-      // 3. Sukses! Redirect ke halaman sukses (nanti kita buat)
-      alert("Booking Berhasil! ID Transaksi: " + data.data.id);
-      router.push("/dashboard"); // Sementara lempar ke dashboard dulu
-
+      router.push(`/dashboard`);
     } catch (error: any) {
-      alert(error.message);
+      console.log(error.message);
     } finally {
       setIsLoading(false);
     }
@@ -75,12 +73,13 @@ export default function BookingForm({ tour }: BookingFormProps) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
       <h3 className="mb-6 font-serif text-2xl text-white">Detail Pemesanan</h3>
-      
-      {/* Input Tanggal */}
+
       <div className="mb-6">
-        <label className="mb-2 block text-sm text-gray-400">Pilih Tanggal Keberangkatan</label>
-        <div 
-          onClick={() => dateInputRef.current?.showPicker()} 
+        <label className="mb-2 block text-sm text-gray-400">
+          Pilih Tanggal Keberangkatan
+        </label>
+        <div
+          onClick={() => dateInputRef.current?.showPicker()}
           className="relative cursor-pointer group"
         >
           <Calendar className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500 transition group-hover:text-orange-500" />
@@ -93,33 +92,65 @@ export default function BookingForm({ tour }: BookingFormProps) {
         </div>
       </div>
 
-      {/* Input Jumlah Peserta */}
       <div className="mb-8">
-        <label className="mb-2 block text-sm text-gray-400">Jumlah Peserta</label>
+        <label className="mb-2 block text-sm text-gray-400">
+          Jumlah Peserta
+        </label>
         <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-black/40 p-2">
-          <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20">-</button>
-          <span className="flex-1 text-center font-semibold text-white">{quantity} Orang</span>
-          <button onClick={() => setQuantity(quantity + 1)} className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-600 text-white hover:bg-orange-700">+</button>
+          <button
+            onClick={() => setQuantity(Math.max(1, quantity - 1))}
+            className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20"
+          >
+            -
+          </button>
+          <span className="flex-1 text-center font-semibold text-white">
+            {quantity} Orang
+          </span>
+          <button
+            onClick={() => setQuantity(quantity + 1)}
+            className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-600 text-white hover:bg-orange-700"
+          >
+            +
+          </button>
         </div>
       </div>
 
-      {/* Ringkasan Harga */}
       <div className="space-y-3 border-t border-white/10 pt-6 text-sm text-gray-300">
-        <div className="flex justify-between"><span>Harga Paket (x{quantity})</span><span>{formatRupiah(subtotal)}</span></div>
-        <div className="flex justify-between text-green-400"><span>Biaya Layanan & Admin</span><span>{formatRupiah(adminFee)}</span></div>
-        <div className="flex justify-between border-t border-white/10 pt-3 text-lg font-bold text-white"><span>Total Pembayaran</span><span>{formatRupiah(total)}</span></div>
+        <div className="flex justify-between">
+          <span>Harga Paket (x{quantity})</span>
+          <span>{formatRupiah(subtotal)}</span>
+        </div>
+        <div className="flex justify-between text-green-400">
+          <span>Biaya Layanan & Admin</span>
+          <span>{formatRupiah(adminFee)}</span>
+        </div>
+        <div className="flex justify-between border-t border-white/10 pt-3 text-lg font-bold text-white">
+          <span>Total Pembayaran</span>
+          <span>{formatRupiah(total)}</span>
+        </div>
       </div>
 
-      {/* TOMBOL BAYAR UPDATE */}
-      <button 
-        onClick={handleBooking} // Panggil fungsi di sini
+      <button
+        onClick={handleBooking}
         disabled={!date || isLoading}
-        className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-orange-600 py-4 font-bold text-white shadow-lg shadow-orange-600/20 transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-gray-700"
+        className={`mt-8 flex w-full items-center justify-center gap-2 rounded-full py-4 font-bold transition
+          ${
+            !date
+              ? "bg-gray-800 text-gray-500 cursor-not-allowed"
+              : "bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-600/20"
+          }
+        `}
       >
         {isLoading ? (
-          <><Loader2 className="animate-spin h-5 w-5" /> Memproses...</>
+          <>
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Memproses...
+          </>
         ) : (
-          <><CreditCard className="h-5 w-5" /> Lanjut Pembayaran</>
+          <>
+            <CreditCard className="h-5 w-5" />
+            Lanjut Pembayaran
+          </>
         )}
       </button>
     </div>
