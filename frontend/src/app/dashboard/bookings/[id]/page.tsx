@@ -3,10 +3,20 @@
 import { use } from "react";
 import { useEffect, useState } from "react";
 import Cookies from "js-cookie";
-import { useRouter } from "next/navigation"; // Tambah useRouter buat refresh
-import { ArrowLeft, Calendar, MapPin, User, Ticket, Loader2, AlertTriangle, XCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { 
+  ArrowLeft, Calendar, MapPin, User, Ticket, 
+  Loader2, AlertTriangle, XCircle, CreditCard, FileText, CheckCircle 
+} from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+
+// Deklarasi Global untuk Midtrans Snap
+declare global {
+  interface Window {
+    snap: any;
+  }
+}
 
 interface TransactionDetail {
   id: number;
@@ -24,53 +34,120 @@ interface TransactionDetail {
 
 export default function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const router = useRouter(); // Init router
+  const router = useRouter();
   
   const [data, setData] = useState<TransactionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isCancelling, setIsCancelling] = useState(false); // State loading buat tombol cancel
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false); // State loading download
 
-  // Fetch Data
-  useEffect(() => {
-    const fetchDetail = async () => {
-      const token = Cookies.get("token");
-      try {
-        const res = await fetch(`http://127.0.0.1:8000/api/bookings/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+  // 1. Fetch Data Detail
+  const fetchDetail = async () => {
+    const token = Cookies.get("token");
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/bookings/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-        if (!res.ok) {
-           setIsLoading(false);
-           return;
-        }
-
-        const json = await res.json();
-        setData(json.data);
-      } catch (error) {
-        console.error("Error network:", error);
-      } finally {
-        setIsLoading(false);
+      if (!res.ok) {
+         setIsLoading(false);
+         return;
       }
-    };
 
+      const json = await res.json();
+      setData(json.data);
+    } catch (error) {
+      console.error("Error network:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     if (id) fetchDetail();
   }, [id]);
 
-  // --- FUNGSI CANCEL DENGAN VALIDASI ---
-  const handleCancelBooking = async () => {
-    // 1. Validasi Konfirmasi (Browser Alert)
-    const isConfirmed = window.confirm(
-      "⚠️ PERINGATAN PEMBATALAN\n\nApakah Anda yakin ingin membatalkan pesanan ini?\nTindakan ini tidak dapat dikembalikan."
-    );
+  // 2. FUNGSI BAYAR
+  const handleProcessPayment = async () => {
+    setIsPaying(true);
+    const token = Cookies.get("token");
 
-    // Kalau user klik "Cancel" di popup, stop proses
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/bookings/${id}/pay`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
+
+      window.snap.pay(json.snap_token, {
+        onSuccess: function(result: any) {
+          alert("✅ Pembayaran Berhasil!");
+          fetchDetail();
+        },
+        onPending: function(result: any) {
+          alert("⏳ Menunggu pembayaran...");
+        },
+        onError: function(result: any) {
+          alert("❌ Pembayaran gagal!");
+        },
+        onClose: function() {
+          console.log("Customer closed the popup");
+        }
+      });
+
+    } catch (error: any) {
+      alert("❌ " + error.message);
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  // 3. FUNGSI DOWNLOAD KWITANSI
+  const handleDownloadInvoice = async () => {
+    setIsDownloading(true);
+    const token = Cookies.get("token");
+
+    try {
+      // Hit endpoint invoice Laravel (Pastikan route backend sudah ada)
+      const res = await fetch(`http://127.0.0.1:8000/api/bookings/${id}/invoice`, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error("Gagal mengunduh kwitansi");
+
+      // Convert response ke Blob (File)
+      const blob = await res.blob();
+      
+      // Buat link download palsu
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Invoice-Travelin-${id}.pdf`; // Nama file
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+    } catch (error: any) {
+      alert("❌ " + error.message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // 4. FUNGSI CANCEL
+  const handleCancelBooking = async () => {
+    const isConfirmed = window.confirm("⚠️ Apakah Anda yakin ingin membatalkan pesanan ini?");
     if (!isConfirmed) return;
 
     setIsCancelling(true);
     const token = Cookies.get("token");
 
     try {
-      // 2. Tembak API Cancel ke Laravel
       const res = await fetch(`http://127.0.0.1:8000/api/bookings/${id}/cancel`, {
         method: "POST",
         headers: { 
@@ -80,20 +157,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       });
 
       const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
 
-      if (!res.ok) {
-        throw new Error(json.message || "Gagal membatalkan pesanan");
-      }
-
-      // 3. Sukses
       alert("✅ Pesanan berhasil dibatalkan.");
-      
-      // Update state lokal biar UI langsung berubah jadi 'cancelled' tanpa refresh
-      if (data) {
-        setData({ ...data, status: 'cancelled' });
-      }
-      
-      router.refresh(); // Refresh data server component kalau ada
+      if (data) setData({ ...data, status: 'cancelled' });
+      router.refresh();
 
     } catch (error: any) {
       alert("❌ " + error.message);
@@ -193,20 +261,34 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 {formatRupiah(data.total_price)}
               </p>
 
-              {/* LOGIKA TOMBOL BERDASARKAN STATUS */}
-              
+              {/* === LOGIKA STATUS PENDING === */}
               {data.status === 'pending' && (
                 <div className="space-y-3">
                     <div className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-xl text-yellow-200 text-sm flex gap-3">
                        <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-                       <p>Silakan selesaikan pembayaran melalui Dashboard sebelum jatuh tempo.</p>
+                       <p>Silakan selesaikan pembayaran sebelum jatuh tempo.</p>
                     </div>
 
-                    {/* TOMBOL CANCEL (Hanya muncul kalau status Pending) */}
+                    <button 
+                        onClick={handleProcessPayment}
+                        disabled={isPaying || isCancelling}
+                        className="w-full mt-4 flex items-center justify-center gap-2 bg-orange-600 text-white font-bold py-3.5 rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-600/20 transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isPaying ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" /> Memproses...
+                            </>
+                        ) : (
+                            <>
+                                <CreditCard className="w-5 h-5" /> Bayar Sekarang
+                            </>
+                        )}
+                    </button>
+
                     <button 
                         onClick={handleCancelBooking}
-                        disabled={isCancelling}
-                        className="w-full mt-4 flex items-center justify-center gap-2 border border-red-500/50 text-red-400 font-bold py-3 rounded-xl hover:bg-red-500/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={isCancelling || isPaying}
+                        className="w-full flex items-center justify-center gap-2 border border-red-500/50 text-red-400 font-bold py-3 rounded-xl hover:bg-red-500/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isCancelling ? (
                             <>
@@ -221,12 +303,34 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
+              {/* === LOGIKA STATUS PAID (LUNAS) === */}
               {data.status === 'paid' && (
-                <button className="w-full bg-green-600/20 text-green-400 font-bold py-4 rounded-xl border border-green-500/50 cursor-default flex justify-center gap-2">
-                  ✅ Pembayaran Lunas
-                </button>
+                <div className="space-y-3">
+                    {/* Indikator Lunas */}
+                    <div className="w-full bg-green-600/20 text-green-400 font-bold py-4 rounded-xl border border-green-500/50 cursor-default flex justify-center items-center gap-2">
+                      <CheckCircle className="w-5 h-5" /> Pembayaran Lunas
+                    </div>
+
+                    {/* TOMBOL DOWNLOAD KWITANSI */}
+                    <button 
+                        onClick={handleDownloadInvoice}
+                        disabled={isDownloading}
+                        className="w-full flex items-center justify-center gap-2 bg-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/20 border border-white/20 transition-all hover:scale-[1.02]"
+                    >
+                        {isDownloading ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" /> Mengunduh...
+                            </>
+                        ) : (
+                            <>
+                                <FileText className="w-4 h-4" /> Download Kwitansi
+                            </>
+                        )}
+                    </button>
+                </div>
               )}
 
+              {/* === LOGIKA STATUS CANCELLED === */}
               {data.status === 'cancelled' && (
                 <div className="w-full bg-red-600/10 text-red-400 font-bold py-4 rounded-xl border border-red-500/30 flex justify-center gap-2 items-center cursor-default">
                   <XCircle className="w-5 h-5" /> Pesanan Dibatalkan
